@@ -57,79 +57,80 @@ socketio.on('connect', socket => {
     var roomName, people;
     socket.on('join', (room) => {
     var isRoomExist = false;
-    MongoClient.connect(url, function(err, db) {
-      if (err) throw err;
-      var dbo = db.db("thisDB");
-      dbo.collection("chatting").findOne({$or:[{"people":[ room.from, room.to] },{"people":[ room.to, room.from] }]}, function(err, result) {
+      MongoClient.connect(url, function(err, db) {
         if (err) throw err;
-        
-        if (result && result.room) {
-          console.log("Join Room");
-          isRoomExist = true;
-          roomName = result.room;
-          people = [ room.from, room.to];
-          socket.join(roomName);
-        }
-        else {
-          console.log("Create Room");
-          var roomUuid = uuid4();
-          roomName = roomUuid;
-          people = [ room.from, room.to];
-          socket.join(roomName);
-        }
-        db.close();
+        var dbo = db.db("thisDB");
+        dbo.collection("chatting").findOne({$or:[{"people":[ room.from, room.to] },{"people":[ room.to, room.from] }]}, function(err, result) {
+          if (err) throw err;
+          
+          if (result && result.room) {
+            console.log("Join Room");
+            isRoomExist = true;
+            roomName = result.room;
+            people = [ room.from, room.to];
+            socket.join(roomName);
+          }
+          else {
+            console.log("Create Room");
+            var roomUuid = uuid4();
+            roomName = roomUuid;
+            people = [ room.from, room.to];
+            socket.join(roomName);
+          }
+
+        const form = new FormData();
+        form.append('my_id', room.from);
+        form.append('to_id', room.to);
+        form.append('offset', 0);
+
+        axios({
+          method  : 'post',
+          url     : 'https://hafiz.work/api/mobile/open-chat',
+          headers : form.getHeaders(),
+          data    : form
+        })
+        .then((resolve) => {
+          conversation = resolve.data;
+          // console.log(conversation);
+          conversation.room = roomName;
+          conversation.people = people;
+
+          // console.log(roomName);
+          socketio.to(roomName).emit('room', conversation);
+
+          if (isRoomExist == false) {
+            MongoClient.connect(url, function(err, db) {
+              if (err) throw err;
+              var dbo = db.db("thisDB");
+              conversation.room = roomName;
+              conversation.people = people;
+              var myobj = conversation;
+              dbo.collection("chatting").insertOne(myobj, function(err, res) {
+                if (err) throw err;
+                // console.log("1 document inserted");
+                db.close();
+              });
+            });
+          } else {
+            MongoClient.connect(url, function(err, db) {
+              if (err) throw err;
+              var dbo = db.db("thisDB");
+              var myquery = { room: roomName };
+              var newvalues = { $set: conversation };
+              dbo.collection("chatting").updateOne(myquery, newvalues, function(err, res) {
+                if (err) throw err;
+                // console.log("1 document updated");
+                db.close();
+              });
+            }); 
+          }
+        })
+        .catch((error) => console.log(error));
+
+          db.close();
+        });
       });
-    });
-    
-      const form = new FormData();
-      form.append('my_id', room.from);
-      form.append('to_id', room.to);
-      form.append('offset', 0);
-
-      axios({
-        method  : 'post',
-        url     : 'https://hafiz.work/api/mobile/open-chat',
-        headers : form.getHeaders(),
-        data    : form
-      })
-      .then((resolve) => {
-        conversation = resolve.data;
-        // console.log(conversation);
-        conversation.room = roomName;
-        conversation.people = people;
-
-        // console.log(roomName);
-        socketio.to(roomName).emit('room', conversation);
-
-        if (isRoomExist == false) {
-          MongoClient.connect(url, function(err, db) {
-            if (err) throw err;
-            var dbo = db.db("thisDB");
-            conversation.room = roomName;
-            conversation.people = people;
-            var myobj = conversation;
-            dbo.collection("chatting").insertOne(myobj, function(err, res) {
-              if (err) throw err;
-              // console.log("1 document inserted");
-              db.close();
-            });
-          });
-        } else {
-          MongoClient.connect(url, function(err, db) {
-            if (err) throw err;
-            var dbo = db.db("thisDB");
-            var myquery = { room: roomName };
-            var newvalues = { $set: conversation };
-            dbo.collection("chatting").updateOne(myquery, newvalues, function(err, res) {
-              if (err) throw err;
-              // console.log("1 document updated");
-              db.close();
-            });
-          }); 
-        }
-      })
-      .catch((error) => console.log(error));
-
+      
     // callback();
     });
 
