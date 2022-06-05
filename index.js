@@ -5,158 +5,191 @@ const FormData = require('form-data');
 const socketio = require('socket.io')(http)
 const axios = require('axios').default;
 var MongoClient = require('mongodb').MongoClient;
-var urlMongo = 'mongodb://localhost:27017';
-var urlDB = "mongodb://localhost:27017/seccast";
+var url = 'mongodb://localhost:27017/';
+var urlDB = 'mongodb://localhost:27017/thisDB';
+var newCollection = 'chatting';
 
-
-MongoClient.connect(urlMongo, function(err, db) {
+MongoClient.connect(url, function(err, db) {
   if (err) throw err;
-  console.log("Database created!");
+  // console.log("Database created!");
   db.close();
 });
 
-MongoClient.connect(urlMongo, async function(err, db) {
-  if (err) throw err;
-
-
-  if (err) throw err;
-
-  var dbo = db.db("seccast");
-  dbo.listCollections().toArray(function(err, items){
+MongoClient.connect(url, async function(err, db) {
     if (err) throw err;
+    var dbo = db.db("thisDB");
+    const collection = await db.db("thisDB").listCollections({}, { nameOnly: true }).toArray()
+    // console.log('List of all collections :: ', JSON.stringify(collection))
+    var isExist = false;
+    for (let i = 0; i < collection.length; i++) {
+      if ( collection[i].name == newCollection) {
+          // console.log("Collection exist!");
+          isExist = true;
+        }
+    }
 
-    console.log(items); 
-    if (items.length == 0)
-        console.log("No collections in database")  
-  });
+    if (isExist == false) {
+        dbo.createCollection(newCollection, function(err, res) {
+        if (err) throw err;
+        // console.log("Collection created!");
+        db.close();
+      });
+    }
 
-    const collection = await db.db("seccast").listCollections({}, { nameOnly: true }).toArray()
-    console.log('List of all collections :: ', JSON.stringify(collection))
-
-  // db.collectionNames("chatting", function(err, names) {
-  //   console.log('Exists: ', names.length > 0);
-  // });
-
-  // var dbo = db.db("chatting");
-  // dbo.createCollection("customers", function(err, res) {
-  //   if (err) throw err;
-  //   console.log("Collection created!");
-  //   db.close();
-  // });
 });
 
 
 app.get('/', (req, res) => {
     res.send("Node Server is running. Yay!!")
 })
-const roomList = [];
-//Socket Logic
 
+
+// socket.emit('join', {'from':19, "to":17});
+
+//  socket.on('room', (message) {
+//     print(message);
+//  });
+var roomName, people;
 socketio.on('connect', socket => {
     socket.on('join', (room) => {
-    
-    MongoClient.connect(urlMongo, function(err, db) {
+
+    var isRoomExist = false;
+    MongoClient.connect(url, function(err, db) {
       if (err) throw err;
-      var dbo = db.db("seccast");
-      dbo.collection("chatting").findOne({}, function(err, result) {
+      var dbo = db.db("thisDB");
+      dbo.collection("chatting").findOne({$or:[{"people":[ room.from, room.to] },{"people":[ room.to, room.from] }]}, function(err, result) {
         if (err) throw err;
-        console.log(result.name);
-        db.close();
-      });
-    });
-
-    MongoClient.connect(urlMongo, function(err, db) {
-      if (err) throw err;
-      var dbo = db.db("seccast");
-      var query = { address: "Park Lane 38" };
-      dbo.collection("chatting").find(query).toArray(function(err, result) {
-        if (err) throw err;
-        console.log(result);
-        db.close();
-      });
-    });
-    
-    // check existing room
-    var roomIndex = null;
-    for (let i = 0; i < roomList.length; i++) {
-        if ( roomList[i].people.includes(room.from) && roomList[i].people.includes(room.to)) {
-            roomIndex = i;
-            break;
-        }
-    }
-
-    var roomName;
-    //user join existing room
-    if (roomIndex != null) {
-        roomName = roomList[roomIndex].roomId;
-    } else {
-        //create room
-        var roomUuid = uuid4();
-        var people = {'roomId':roomUuid, 'people': [room.from,room.to]}
-        roomList.push(people);
-        roomName = roomUuid;
-    }
-
-    const form = new FormData();
-    form.append('my_id', room.from);
-    form.append('to_id', room.to);
-    form.append('offset', 0);
-
-    axios({
-      method  : 'post',
-      url     : 'https://hafiz.work/api/mobile/open-chat',
-      headers : form.getHeaders(),
-      data    : form
-    })
-      .then((resolve) => {
-        console.log(resolve.data);
-        var roomInfo = '{ "room" : "'+ roomName +'"}';
-        conversation = resolve.data;
-        conversation.data.unshift(roomInfo);
-        socketio.to(roomName).emit('room', conversation);
-      })
-      .catch((error) => console.log(error.response.data));
-
-    socket.join(roomName);
         
+        if (result && result.room) {
+          isRoomExist = true;
+          roomName = result.room;
+          people = [ room.from, room.to];
+          socket.join(roomName);
+        }
+        else {
+          var roomUuid = uuid4();
+          roomName = roomUuid;
+          people = [ room.from, room.to];
+          socket.join(roomName);
+        }
+
+
+        db.close();
+      });
+    });
+    
+      const form = new FormData();
+      form.append('my_id', room.from);
+      form.append('to_id', room.to);
+      form.append('offset', 0);
+
+      axios({
+        method  : 'post',
+        url     : 'https://hafiz.work/api/mobile/open-chat',
+        headers : form.getHeaders(),
+        data    : form
+      })
+      .then((resolve) => {
+        conversation = resolve.data;
+        conversation.room = roomName;
+        conversation.people = people;
+        socketio.to(roomName).emit('room', conversation);
+
+        if (isRoomExist == false) {
+          MongoClient.connect(url, function(err, db) {
+            if (err) throw err;
+            var dbo = db.db("thisDB");
+
+            conversation.room = roomName;
+            conversation.people = people;
+            var myobj = conversation;
+            dbo.collection("chatting").insertOne(myobj, function(err, res) {
+              if (err) throw err;
+              // console.log("1 document inserted");
+              db.close();
+            });
+          });
+        } else {
+          MongoClient.connect(url, function(err, db) {
+            if (err) throw err;
+            var dbo = db.db("thisDB");
+            var myquery = { room: roomName };
+            var newvalues = { $set: conversation };
+            dbo.collection("chatting").updateOne(myquery, newvalues, function(err, res) {
+              if (err) throw err;
+              // console.log("1 document updated");
+              db.close();
+            });
+          }); 
+        }
+      })
+      .catch((error) => console.log(error));
+
     // callback();
     });
 
-    socket.on('send_message', (data, callback) => {
-
-        // {
-        //     "id": "348",
-        //     "type": 1,
-        //     "broadcast_id": null,
-        //     "from": 19,
-        //     "to": 17,
-        //     "content": "testing",
-        //     "media1": null,
-        //     "media2": null,
-        //     "media3": null,
-        //     "created_at": 1654153047
-        // }
-
-        MongoClient.connect(urlMongo, function(err, db) {
+    // socket.emit('send_message', { 'room': room,'from' : 19, 'to' : 17, 'msg': 'testing', 'media1': 1, 'media_type': 1});
+     // { 'room' : '0ebc41bf-d427-44fa-aadc-29eaa52256da', 'to' : 17, 'msg': 'testing', 'media1': 1, 'media_type': 1}
+    socket.on('send_message', (newMessage, callback) => {
+        var conversation;
+        MongoClient.connect(url, function(err, db) {
           if (err) throw err;
-          var dbo = db.db("seccast");
-          var myobj = { name: "Company Inc", address: "Highway 37" };
-          dbo.collection("chatting").insertOne(myobj, function(err, res) {
+          var dbo = db.db("thisDB");
+          dbo.collection("chatting").findOne({"room":newMessage.room }, function(err, result) {
             if (err) throw err;
-            console.log("1 document inserted");
+            
+           
+            var roomName = newMessage.room;
+            if (result) {
+
+              conversation = result;
+              delete conversation._id;
+              var countId = conversation.data[0].id;
+              var newId = parseInt(countId) + 1;
+              delete newMessage.room;
+              var timestamp = + new Date();
+              const newMessageTarget = Object.assign({id: newId.toString()}, newMessage, {created_at : timestamp});
+              conversation.data.unshift(newMessageTarget)
+              
+              // console.log("conversation-- >", conversation)
+              socketio.to(roomName).emit('room', conversation);
+
+              MongoClient.connect(url, function(err, db) {
+                if (err) throw err;
+                var dbo = db.db("thisDB");
+                var myquery = { room: roomName };
+                var newvalues = { $set: conversation };
+                dbo.collection("chatting").updateOne(myquery, newvalues, function(err, res) {
+                  if (err) throw err;
+                  // console.log("1 document updated");
+                  db.close();
+                });
+              });
+
+
+              const form = new FormData();
+              form.append('from', newMessage.from);
+              form.append('to', newMessage.to);
+              form.append('msg', newMessage.msg);
+              form.append('media1', newMessage.media1);
+              form.append('media_type', newMessage.media_type);
+
+              axios({
+                method  : 'post',
+                url     : 'https://hafiz.work/api/mobile/submit-chat',
+                headers : form.getHeaders(),
+                data    : form
+              })
+              .then((resolve) => {
+                  console.log(resolve);
+              })
+              .catch((error) => console.log(error));
+            }
             db.close();
           });
         });
-
-
-
-        
-        console.log(data.room);
-      socketio.to(data.room).emit('message', data);
     });
-
-
-    // socket.emit('send_message', { 'room': rooom,'from' : 19, 'to' : 17, 'msg': 'testing', 'media1': 1, 'media_type': 1});
+    
 
 });
 
