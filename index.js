@@ -52,10 +52,10 @@ app.get('/', (req, res) => {
 //  socket.on('room', (message) {
 //     print(message);
 //  });
-var roomName, people;
-socketio.on('connect', socket => {
-    socket.on('join', (room) => {
 
+socketio.on('connect', socket => {
+    var roomName, people;
+    socket.on('join', (room) => {
     var isRoomExist = false;
     MongoClient.connect(url, function(err, db) {
       if (err) throw err;
@@ -64,19 +64,19 @@ socketio.on('connect', socket => {
         if (err) throw err;
         
         if (result && result.room) {
+          console.log("Join Room");
           isRoomExist = true;
           roomName = result.room;
           people = [ room.from, room.to];
           socket.join(roomName);
         }
         else {
+          console.log("Create Room");
           var roomUuid = uuid4();
           roomName = roomUuid;
           people = [ room.from, room.to];
           socket.join(roomName);
         }
-
-
         db.close();
       });
     });
@@ -94,15 +94,17 @@ socketio.on('connect', socket => {
       })
       .then((resolve) => {
         conversation = resolve.data;
+        // console.log(conversation);
         conversation.room = roomName;
         conversation.people = people;
+
+        // console.log(roomName);
         socketio.to(roomName).emit('room', conversation);
 
         if (isRoomExist == false) {
           MongoClient.connect(url, function(err, db) {
             if (err) throw err;
             var dbo = db.db("thisDB");
-
             conversation.room = roomName;
             conversation.people = people;
             var myobj = conversation;
@@ -171,11 +173,12 @@ socketio.on('connect', socket => {
 
 
               const form = new FormData();
+              // console.log(newMessage);
               form.append('from', newMessage.from);
               form.append('to', newMessage.to);
               form.append('msg', newMessage.msg);
-              form.append('media1', newMessage.media1);
-              form.append('media_type', newMessage.media_type);
+              form.append('media1',"");
+              form.append('media_type',"");
 
               axios({
                 method  : 'post',
@@ -184,7 +187,7 @@ socketio.on('connect', socket => {
                 data    : form
               })
               .then((resolve) => {
-                  console.log(resolve);
+                  console.log(resolve.data);
               })
               .catch((error) => console.log(error));
             }
