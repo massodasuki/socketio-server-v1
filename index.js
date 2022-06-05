@@ -5,11 +5,14 @@ const FormData = require('form-data');
 const socketio = require('socket.io')(http)
 const axios = require('axios').default;
 var MongoClient = require('mongodb').MongoClient;
-var url = 'mongodb://localhost:27017/';
-var urlDB = 'mongodb://localhost:27017/thisDB';
+// var url = 'mongodb://localhost:27017/';
+// var urlDB = 'mongodb://localhost:27017/thisDB';
 var newCollection = 'chatting';
 
-MongoClient.connect(url, function(err, db) {
+var url = 'mongodb+srv://admin:admin@cluster0.vqwjg.mongodb.net/?retryWrites=true&w=majority'
+var urlDB = 'mongodb+srv://admin:admin@cluster0.vqwjg.mongodb.net/thisDB?retryWrites=true&w=majority'
+
+MongoClient.connect(urlDB, function(err, db) {
   if (err) throw err;
   // console.log("Database created!");
   db.close();
