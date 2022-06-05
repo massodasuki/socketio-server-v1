@@ -196,7 +196,7 @@ socketio.on('connect', socket => {
 
 });
 
-// http.listen(process.env.PORT)
-http.listen(3000)
+http.listen(process.env.PORT)
+// http.listen(3000)
 
 
